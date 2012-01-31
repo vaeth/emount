@@ -10,18 +10,18 @@ my $script = $1;
 my $umountmode = ($script =~ /un?mount/i);
 sub version
 {
-	print "emount/eunmount v2.0 by Martin Väth\n",
-		"martin\@mvath.de\n"
+	print "emount/eumount v2.1 by Martin Väth\n",
+		"martin\@mvath.de\n";
 	exit 0
 }
 
 =head1 NAME
 
-emount/eunmount - (u)mount devices using cryptsetup
+emount/eumount - (u)mount devices using cryptsetup
 
 =head1 SYNOPSIS
 
-B<e(un)mount> [options] devicelist
+B<e(u)mount> [options] devicelist
 
 To get an extended help, use option B<--man> or B<-?>
 
@@ -198,7 +198,7 @@ for my $nameref (@ARGV) {
 				}
 			}
 			else {
-				print STDERR "$script: error: could not unmount $m\n"
+				print STDERR "$script: error: could not umount $m\n"
 			}
 		}
 		else {
