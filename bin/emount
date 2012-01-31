@@ -1,0 +1,239 @@
+#! /usr/bin/perl
+use strict;
+use integer;
+use Pod::Usage;
+use Getopt::Long;
+use Cwd qw(abs_path);
+
+$0 =~ /([^\/]*)$/;
+my $script = $1;
+my $umountmode = ($script =~ /un?mount/i);
+sub version
+{
+	print "emount/eunmount v2.0 by Martin Väth\n",
+		"martin\@mvath.de\n"
+	exit 0
+}
+
+=head1 NAME
+
+emount/eunmount - (u)mount devices using cryptsetup
+
+=head1 SYNOPSIS
+
+B<e(un)mount> [options] devicelist
+
+To get an extended help, use option B<--man> or B<-?>
+
+=head1 DESCRIPTION
+
+This script (u)mounts encrypted devices according to S<F</etc/fstab>>.
+
+The devices are created or removed with F<cryptsetup> if necessary.
+
+You can use your own script instead with the option --cryptsetup.
+You may want to use this e.g. to pass a cypher or hash to F<cryptsetup>
+or to pipe a password.
+
+=over 8
+
+=item For example, your script may look like
+
+#! /bin/sh
+gpg --quiet --decrypt FILE.gpg E<verbar> \
+   cryptsetup -h sha512 -c twofish-cbc-essiv:sha256 -s 256 "${@}"
+
+=item For each encrypted device the file F</etc/fstab> should
+contain a line like
+
+/dev/mapper/e-I<DEVICE> I<DIR> I<OPTIONS> 0 0
+
+=item where
+
+I<OPTIONS> should contain B<noauto> to avoid mounting at boot time
+
+=item and
+
+I<DEVICE> is the name of the device containing the encrypted data
+(e.g. C<hda> or C<sda> or C<loop6>).
+The symbol C<.> in I<DEVICE> has the special meaning of C</>.
+
+For instance, C</dev/mapper/e-mapper.x> as entry in F</etc/fstab>
+means that the device with the encrypted data is F</dev/mapper/x>.
+
+=back
+
+=head1 OPTIONS AND ARGUMENTS
+
+=over 8
+
+=item B<--help> or B<-h>
+
+Display brief help.
+
+=item B<--man> or B<-?>
+
+Display extended help as a manpage.
+
+=item B<--cryptsetup=>I<name> or B<-c> I<name>
+
+Use I<name> instead of F<cryptsetup>
+
+=item B<--opt=>I<string> or B<-o> I<string>
+
+Pass I<string> as an option to F<cryptsetup> for "create".
+You can use this e.g. in your own F<cryptsetup> replacement to get the
+passphrase from a different gpg file.
+This option can be used accumulatively.
+
+=item B<--mount> or B<-m>
+
+Always mount, regardless of the name under which the script is called
+
+=item B<--umount>  B<--unmount> or B<-u>
+
+Always umount, regardless of the name under which the script is called
+
+=item B<--version> or B<-v>
+
+print version number
+
+=item B<-->
+
+Last option
+
+=back
+
+=head1 AUTHOR
+
+Martin VE<auml>th E<lt>martin@mvath.deE<gt>
+
+=cut
+
+# Parse Options:
+
+my $cryptsetup = 'cryptsetup';
+my @passopt = ();
+
+$Getopt::Long::bundling = 1;
+GetOptions(
+	'help|h', sub { pod2usage(1) },
+	'man|?', sub { pod2usage(-verbose => 2) },
+	'cryptsetup|c=s', \$cryptsetup,
+	'opt|o=s', \@passopt,
+	'mount|m',  sub { $umountmode = '' },
+	'umount|unmount|u', \$umountmode,
+	'version|V', \&version
+) or pod2usage(2);
+
+unless(@ARGV) {
+	&pod2usage(1)
+}
+
+# Parse /etc/fstab
+
+my %dev = ();
+sub addtodev
+{
+	my($a,$b) = @_;
+	unless(exists $dev{$a}) {
+		$dev{$a} = $b
+	}
+}
+
+{
+	local @ARGV = ('/etc/fstab'); # Fake next while:
+	while(<>) {
+		if(m!^\s*/dev/mapper/e\-([^\s]+)\s+([^\s]+)!) {
+			&addtodev($2, $1);
+			&addtodev($1, $1);
+			&addtodev("/dev/mapper/e-$1", $1);
+			&addtodev("/dev/mapper/$1", $1);
+			my $a = "$1";
+			$a =~ s!\.!/!g;
+			&addtodev($a, $1);
+			&addtodev("/dev/$a", $1);
+			&addtodev("/dev/mapper/$a", $1);
+			&addtodev("/dev/mapper/dev/$a", $1);
+		}
+	}
+}
+
+# Print and execute command.
+# As a side effect, set $exitstate if execution was not successfull.
+
+my $exitstate = 0;
+sub myexec
+{
+	print join(' ', @_), "\n";
+	my $s = system(@_);
+	if($s) {
+		$exitstate = 1;
+		$s >>= 8;
+		if($s > $exitstate) {
+			$exitstate = $s
+		}
+		return ''
+	}
+	return 1
+}
+
+# Main loop:
+
+for my $nameref (@ARGV) {
+	my $a = abs_path($nameref);
+	unless(exists $dev{$a}) {
+		print STDERR "$script: error: no entry in /etc/fstab for $a\n";
+		$exitstate = 2;
+		next
+	}
+	my $d = $dev{$a};
+	my $c = "e-$d";
+	my $m = "/dev/mapper/$c";
+	if($umountmode) {
+		if(-e $m) {
+			if(&myexec('umount', $m)) {
+				unless(&myexec($cryptsetup, @passopt, 'remove', $c)) {
+					print STDERR "$script: error: could not remove $c\n"
+				}
+			}
+			else {
+				print STDERR "$script: error: could not unmount $m\n"
+			}
+		}
+		else {
+			print STDERR "$script: warning: $m does not exist\n"
+		}
+	}
+	else {
+		$d =~ s!\.!/!g;
+		$d = "/dev/$d";
+		unless(-e $m) {
+			if(&myexec($cryptsetup, @passopt, 'create', $c, $d)) {
+				unless(&myexec('mount', $m)) {
+					print STDERR "$script: error: could not mount $m\n",
+						"Perhaps you misspelled your password. I will remove $c again\n";
+					for(my $i = 0 ; ; $i++) {
+						if(myexec($cryptsetup, 'remove', $c)) {
+							last
+						}
+						if($i < 5) {
+							print STDERR "$script: remove $c failed. Retrying in a second\n";
+							sleep 1
+						}
+						else {
+							print STDERR "$script: error could not remove $c\n"
+						}
+					}
+				}
+			}
+			else {
+				print STDERR "$script: error: Could not create $c\n"
+			}
+		}
+		else {
+			print STDERR "$script: warning: $m already exists\n"
+		}
+	}
+}
+exit($exitstate)
