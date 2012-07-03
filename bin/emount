@@ -10,7 +10,7 @@ my $script = $1;
 my $umountmode = ($script =~ /un?mount/i);
 sub version
 {
-	print "emount/eumount v2.1 by Martin Väth\n",
+	print "emount/eumount v2.2 by Martin Väth\n",
 		"martin\@mvath.de\n";
 	exit 0
 }
@@ -196,6 +196,14 @@ for my $nameref (@ARGV) {
 				unless(&myexec($cryptsetup, @passopt, 'remove', $c)) {
 					print STDERR "$script: error: could not remove $c\n"
 				}
+				# Close repeatedly if necessary to deal with slave mounts;
+				# redirect stderr to /dev/null to suppress error messages
+				close(STDERR); open(STDERR, '/dev/null');
+				do {
+					sleep 1
+				}
+				while(system('umount', $m) == 0);
+				close(STDERR)
 			}
 			else {
 				print STDERR "$script: error: could not umount $m\n"
