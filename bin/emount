@@ -10,7 +10,7 @@ my $script = $1;
 my $umountmode = ($script =~ /un?mount/i);
 sub version
 {
-	print "emount/eumount v2.2 by Martin Väth\n",
+	print "emount/eumount v2.3 by Martin Väth\n",
 		"martin\@mvath.de\n";
 	exit 0
 }
@@ -202,7 +202,7 @@ for my $nameref (@ARGV) {
 				do {
 					sleep 1
 				}
-				while(system('umount', $m) == 0);
+				while((system('umount', $a) == 0) || (system('umount', $m) == 0));
 				close(STDERR)
 			}
 			else {
