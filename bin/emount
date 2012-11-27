@@ -10,7 +10,7 @@ my $script = $1;
 my $umountmode = ($script =~ /un?mount/i);
 sub version
 {
-	print "emount/eumount v2.3 by Martin Väth\n",
+	print "emount/eumount v2.4 by Martin Väth\n",
 		"martin\@mvath.de\n";
 	exit 0
 }
@@ -178,6 +178,18 @@ sub myexec
 	return 1
 }
 
+my $luks = '';
+my $remove = 'remove';
+sub CheckLuks
+{
+	my ($d) = @_;
+	if(!&myexec($cryptsetup, 'isLuks', $d)) {
+		return ''
+	}
+	$remove = 'luksClose';
+	return ($luks = 1)
+}
+
 # Main loop:
 
 for my $nameref (@ARGV) {
@@ -190,10 +202,13 @@ for my $nameref (@ARGV) {
 	my $d = $dev{$a};
 	my $c = "e-$d";
 	my $m = "/dev/mapper/$c";
+	$d =~ s!\.!/!g;
+	$d = "/dev/$d";
 	if($umountmode) {
 		if(-e $m) {
 			if(&myexec('umount', $m)) {
-				unless(&myexec($cryptsetup, @passopt, 'remove', $c)) {
+				&CheckLuks($d);
+				unless(&myexec($cryptsetup, @passopt, $remove, $c)) {
 					print STDERR "$script: error: could not remove $c\n"
 				}
 				# Close repeatedly if necessary to deal with slave mounts;
@@ -204,42 +219,40 @@ for my $nameref (@ARGV) {
 				}
 				while((system('umount', $a) == 0) || (system('umount', $m) == 0));
 				close(STDERR)
-			}
-			else {
+			} else {
 				print STDERR "$script: error: could not umount $m\n"
 			}
-		}
-		else {
+		} else {
 			print STDERR "$script: warning: $m does not exist\n"
 		}
-	}
-	else {
-		$d =~ s!\.!/!g;
-		$d = "/dev/$d";
+	} else {
 		unless(-e $m) {
-			if(&myexec($cryptsetup, @passopt, 'create', $c, $d)) {
+			my $stat;
+			if(&CheckLuks($d)) {
+				$stat = &myexec($cryptsetup, @passopt, 'luksOpen', $d, $c)
+			} else {
+				$stat = &myexec($cryptsetup, @passopt, 'create', $c, $d)
+			}
+			if(!$stat) {
+				print STDERR "$script: error: Could not create $c\n"
+			} else {
 				unless(&myexec('mount', $m)) {
 					print STDERR "$script: error: could not mount $m\n",
 						"Perhaps you misspelled your password. I will remove $c again\n";
 					for(my $i = 0 ; ; $i++) {
-						if(myexec($cryptsetup, 'remove', $c)) {
+						if(myexec($cryptsetup, $remove, $c)) {
 							last
 						}
 						if($i < 5) {
 							print STDERR "$script: remove $c failed. Retrying in a second\n";
 							sleep 1
-						}
-						else {
+						} else {
 							print STDERR "$script: error could not remove $c\n"
 						}
 					}
 				}
 			}
-			else {
-				print STDERR "$script: error: Could not create $c\n"
-			}
-		}
-		else {
+		} else {
 			print STDERR "$script: warning: $m already exists\n"
 		}
 	}
