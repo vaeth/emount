@@ -1,52 +1,36 @@
 #compdef emount eumount
-_emount__devices() {
+local curcontext="$curcontext" state state_descr line
+typeset -A opt_args
+_arguments -C -s -S : \
+'(* -)'{'--help','-h'}'[print a brief help]' \
+'(* -)'{'--man','-\\?'}'[show extended help as a manpage]' \
+'(* -)'{'--version','-V'}'[print version]' \
+{'(--ecrypt)-e+','(-e)--ecrypt='}'[PROG. Use PROG instead of ecrypt]:ecrypt-program:_files' \
+{'(--mount)-m','(-m)--mount'}'[act as emount]' \
+{'(--umount --unmount)-u','(--unmount -u)--umount','(--umount -u)--unmount'}'[act as eumount]' \
+'-a[pass -a to ecrypt for "create"; use alternative passphrase]' \
+'*:device or directory:->emount'
+local ret=$?
+case $state in
+(emount)
 	# determine whether we are in mount or umount mode:
-	local m=: i c w
+	local m=:
 	[[ $service = emount ]] || m=false
-	for (( i=2 ; i<CURRENT ; ++i))
-	do	case $words[$i] in
-		(--)
-			i=$CURRENT
-		;;
-		(--ecrypt)
-			((++i))
-		;;
-		(--mount)
-			m=:
-		;;
-		(--u(n|)mount)
+	if $m
+	then	[[ -z ${opt_args[-u]++} && -z ${opt_args[--umount]++} && -z ${opt_args[--unmount]++} ]] || \
 			m=false
-		;;
-		(-[!-]*)
-			w=$words[$i]
-			for (( c=2 ; c<=$#w ; ++c ))
-			do	case $w[$c] in
-				([e])
-					if [[ $c = $#w ]]
-					then	((++i))
-					else	c=$#w
-					fi
-				;;
-				(m)
-					m=:
-				;;
-				(u)
-					m=false
-				;;
-				esac
-			done
-		;;
-		esac
-	done
+	else	[[ -z ${opt_args[-e]++} && -z ${opt_args[--mount]++} ]] || \
+			m=:
+	fi
 	# Find mounted devices
-	local -a d a
+	local i
+	local -a d a paths
 	if ! $m
 	then	d=()
 		while read i
 		do	case $i in
 			([[:space:]]#/dev/mapper/e-*)
-				d+=(${${i##[[:space:]]#}%% *})
-			;;
+				d+=(${${i##[[:space:]]#}%% *});;
 			esac
 		done <<END
 $(mount 2>/dev/null)
@@ -57,23 +41,12 @@ END
 		([[:space:]]#/dev/mapper/e-*)
 			a=(${=${i#*-}})
 			if [[ -n $d[(r)(/dev/mapper/e-$a[1])] ]]
-			then	$m || compadd $@ -- $a[2]
-			else	$m && compadd $@ -- $a[1,2]
-			fi
-		;;
+			then	$m || paths+=($a[2])
+			else	$m && paths+=($a[1,2])
+			fi;;
 		esac
 	done </etc/fstab
-	return 0
-}
-_arguments -s -S : \
-'(* -)'{'--help','-h'}'[print a brief help]' \
-'(* -)'{'--man','-\\?'}'[show extended help as a manpage]' \
-'(* -)'{'--version','-V'}'[print version]' \
-{'(--ecrypt)-e+','(-e)--ecrypt='}'[PROG. Use PROG instead of ecrypt]:ecrypt-program:_files' \
-{'(--mount)-m','(-m)--mount'}'[act as emount]' \
-{'(--umount --unmount)-u','(--unmount -u)--umount','(--umount -u)--unmount'}'[act as eumount]' \
-'-a[pass -a to ecrypt for "create"; use alternative passphrase]' \
-'*:device or directory:_emount__devices'
-local stat=$?
-unset -f _emount__devices
-return stat
+	_canonical_paths -A paths directories 'mount point'
+	ret=$?;;
+esac
+return ret
