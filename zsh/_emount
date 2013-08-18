@@ -1,7 +1,7 @@
 #compdef emount eumount
 local curcontext="$curcontext" state state_descr line
 typeset -A opt_args
-_arguments -C -s -S : \
+_arguments -C -s -S -A '-*' : \
 '(* -)'{'--help','-h'}'[print a brief help]' \
 '(* -)'{'--man','-\\?'}'[show extended help as a manpage]' \
 '(* -)'{'--version','-V'}'[print version]' \
