@@ -1,4 +1,4 @@
-#! /usr/bin/perl
+#!/usr/bin/perl
 use strict;
 use integer;
 use Pod::Usage;
@@ -10,7 +10,7 @@ my $script = $1;
 my $umountmode = ($script =~ /un?mount/i);
 sub version
 {
-	print "emount/eumount v2.4 by Martin Väth\n",
+	print "emount/eumount v2.7 by Martin Väth\n",
 		"martin\@mvath.de\n";
 	exit 0
 }
@@ -39,7 +39,7 @@ or to pipe a password.
 
 =item For example, your script may look like
 
-#! /bin/sh
+#!/bin/sh
 gpg --quiet --decrypt FILE.gpg E<verbar> \
    cryptsetup -h sha512 -c twofish-cbc-essiv:sha256 -s 256 "${@}"
 
