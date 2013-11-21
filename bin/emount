@@ -8,9 +8,8 @@ use Cwd qw(abs_path);
 $0 =~ /([^\/]*)$/;
 my $script = $1;
 my $umountmode = ($script =~ /un?mount/i);
-sub version
-{
-	print "emount/eumount v2.7 by Martin Väth\n",
+sub version {
+	print "emount/eumount v2.8 by Martin Väth\n",
 		"martin\@mvath.de\n";
 	exit 0
 }
@@ -133,8 +132,7 @@ unless(@ARGV) {
 # Parse /etc/fstab
 
 my %dev = ();
-sub addtodev
-{
+sub addtodev {
 	my($a,$b) = @_;
 	unless(exists $dev{$a}) {
 		$dev{$a} = $b
@@ -163,8 +161,7 @@ sub addtodev
 # As a side effect, set $exitstate if execution was not successfull.
 
 my $exitstate = 0;
-sub myexec
-{
+sub myexec {
 	print join(' ', @_), "\n";
 	my $s = system(@_);
 	if($s) {
@@ -180,8 +177,7 @@ sub myexec
 
 my $luks = '';
 my $remove = 'remove';
-sub CheckLuks
-{
+sub CheckLuks {
 	my ($d) = @_;
 	if(!&myexec($cryptsetup, 'isLuks', $d)) {
 		return ''
