@@ -1,18 +1,13 @@
-#!/usr/bin/perl
+#!/usr/bin/env perl
+require 5.012;
+package Emount v2.8.1;
+
 use strict;
 use integer;
-use Pod::Usage;
-use Getopt::Long;
-use Cwd qw(abs_path);
-
-$0 =~ /([^\/]*)$/;
-my $script = $1;
-my $umountmode = ($script =~ /un?mount/i);
-sub version {
-	print "emount/eumount v2.8 by Martin Väth\n",
-		"martin\@mvath.de\n";
-	exit 0
-}
+use Getopt::Long 2.24 ();
+use Cwd ();
+use File::Spec ();
+# use Pod::Usage ();
 
 =head1 NAME
 
@@ -109,148 +104,178 @@ Martin VE<auml>th E<lt>martin@mvath.deE<gt>
 
 =cut
 
-# Parse Options:
+# Static variables:
+
+our $VERSION;
+my $umountmode = ($0 =~ m{un?mount[\w\.\,]*$}i);
+my $name = ($umountmode ? 'eumount' : 'emount');
+my $devnull = File::Spec->devnull();
+
+# Global variables:
+
+my %dev = ();
+my $exitstate = 0;
+my $luks = '';
+my $remove = 'remove';
+
+# Default options:
 
 my $cryptsetup = 'cryptsetup';
 my @passopt = ();
 
-$Getopt::Long::bundling = 1;
-GetOptions(
-	'help|h', sub { pod2usage(1) },
-	'man|?', sub { pod2usage(-verbose => 2) },
+# Functions:
+
+sub addtodev {
+	my ($a, $b) = @_;
+	$dev{$a} = $b unless(exists $dev{$a})
+}
+
+sub check_luks {
+	my ($d) = @_;
+	return '' unless(&myexec($cryptsetup, 'isLuks', $d));
+	$remove = 'luksClose';
+	$luks = 1
+}
+
+# Print and execute command.
+# As a side effect, set $exitstate if execution was not successful.
+
+sub myexec {
+	print(join(' ', @_), "\n");
+	my $s = system(@_);
+	if(($s < 0) && ($s & 127)) {
+		$s = 127
+	} else {
+		$s >>= 8
+	}
+	return 1 unless($s);
+	$exitstate = $s if($exitstate < $s);
+	''
+}
+
+sub error() {
+	print(STDERR "$name: error: ",
+		join("\n" . (' ' x (length($name) + 9)), @_), "\n")
+}
+
+sub warning() {
+	print(STDERR "$name: warning: ",
+		join("\n" . (' ' x (length($name) + 11)), @_), "\n")
+}
+
+sub version {
+	print($name, ' ', $VERSION, "\n");
+	exit(0)
+}
+
+sub pod2usage {
+	require Pod::Usage;;
+	Pod::Usage::pod2usage(@_)
+}
+
+# Parse options:
+
+Getopt::Long::Configure(qw(bundling gnu_compat permute));
+Getopt::Long::GetOptions(
+	'help|h', sub { &pod2usage(0) },
+	'man|?', sub { &pod2usage(-verbose => 2, -exit => 0) },
 	'cryptsetup|c=s', \$cryptsetup,
 	'opt|o=s', \@passopt,
 	'mount|m',  sub { $umountmode = '' },
 	'umount|unmount|u', \$umountmode,
 	'version|V', \&version
-) or pod2usage(2);
+) or &pod2usage(2);
 
-unless(@ARGV) {
-	&pod2usage(1)
-}
+&pod2usage(2) unless(@ARGV);
 
 # Parse /etc/fstab
-
-my %dev = ();
-sub addtodev {
-	my($a,$b) = @_;
-	unless(exists $dev{$a}) {
-		$dev{$a} = $b
-	}
-}
 
 {
 	local @ARGV = ('/etc/fstab'); # Fake next while:
 	while(<>) {
-		if(m!^\s*/dev/mapper/e\-([^\s]+)\s+([^\s]+)!) {
-			&addtodev($2, $1);
-			&addtodev($1, $1);
-			&addtodev("/dev/mapper/e-$1", $1);
-			&addtodev("/dev/mapper/$1", $1);
-			my $a = "$1";
-			$a =~ s!\.!/!g;
-			&addtodev($a, $1);
-			&addtodev("/dev/$a", $1);
-			&addtodev("/dev/mapper/$a", $1);
-			&addtodev("/dev/mapper/dev/$a", $1);
+		if(m{^\s*/dev/mapper/e\-([^\s]+)\s+([^\s]+)}) {
+			my $dev = $1;
+			&addtodev($2, $dev);
+			&addtodev($dev, $dev);
+			&addtodev("/dev/mapper/e-$dev", $dev);
+			&addtodev("/dev/mapper/$dev", $dev);
+			my $cut = $dev;
+			$cut =~ s{\.}{/};
+			&addtodev($cut, $dev);
+			&addtodev("/dev/$cut", $dev);
+			&addtodev("/dev/mapper/$cut", $dev);
+			&addtodev("/dev/mapper/dev/$cut", $dev);
 		}
 	}
-}
-
-# Print and execute command.
-# As a side effect, set $exitstate if execution was not successfull.
-
-my $exitstate = 0;
-sub myexec {
-	print join(' ', @_), "\n";
-	my $s = system(@_);
-	if($s) {
-		$exitstate = 1;
-		$s >>= 8;
-		if($s > $exitstate) {
-			$exitstate = $s
-		}
-		return ''
-	}
-	return 1
-}
-
-my $luks = '';
-my $remove = 'remove';
-sub CheckLuks {
-	my ($d) = @_;
-	if(!&myexec($cryptsetup, 'isLuks', $d)) {
-		return ''
-	}
-	$remove = 'luksClose';
-	return ($luks = 1)
 }
 
 # Main loop:
 
 for my $nameref (@ARGV) {
-	my $a = abs_path($nameref);
-	unless(exists $dev{$a}) {
-		print STDERR "$script: error: no entry in /etc/fstab for $a\n";
+	my $a = Cwd::abs_path($nameref);
+	unless(exists($dev{$a})) {
+		&error("no entry in /etc/fstab for $a");
 		$exitstate = 2;
 		next
 	}
 	my $d = $dev{$a};
 	my $c = "e-$d";
 	my $m = "/dev/mapper/$c";
-	$d =~ s!\.!/!g;
+	$d =~ s{\.}{/}g;
 	$d = "/dev/$d";
 	if($umountmode) {
 		if(-e $m) {
 			if(&myexec('umount', $m)) {
-				&CheckLuks($d);
-				unless(&myexec($cryptsetup, @passopt, $remove, $c)) {
-					print STDERR "$script: error: could not remove $c\n"
-				}
+				&check_luks($d);
+				&error("could not remove $c")
+					unless(&myexec($cryptsetup, @passopt, $remove, $c));
 				# Close repeatedly if necessary to deal with slave mounts;
-				# redirect stderr to /dev/null to suppress error messages
-				close(STDERR); open(STDERR, '/dev/null');
-				do {
-					sleep 1
+				while() {
+					sleep(1);
+					# redirect stderr to /dev/null to suppress error messages
+					my $olderr = undef;
+					$olderr = undef unless(open($olderr, '>&', \*STDERR)
+						&& open(STDERR, '>', File::Spec->devnull()));
+					my $repeat = ((system('umount', $a) == 0) ||
+						(system('umount', $m) == 0));
+					open(STDERR, '>&', $olderr) if(defined($olderr));
+					last unless($repeat)
 				}
-				while((system('umount', $a) == 0) || (system('umount', $m) == 0));
-				close(STDERR)
 			} else {
-				print STDERR "$script: error: could not umount $m\n"
+				&error("could not umount $m")
 			}
 		} else {
-			print STDERR "$script: warning: $m does not exist\n"
+			&warning("$m does not exist")
 		}
+	} elsif(-e $m) {
+		&warning("$m already exists")
 	} else {
-		unless(-e $m) {
-			my $stat;
-			if(&CheckLuks($d)) {
-				$stat = &myexec($cryptsetup, @passopt, 'luksOpen', $d, $c)
-			} else {
-				$stat = &myexec($cryptsetup, @passopt, 'create', $c, $d)
-			}
-			if(!$stat) {
-				print STDERR "$script: error: Could not create $c\n"
-			} else {
-				unless(&myexec('mount', $m)) {
-					print STDERR "$script: error: could not mount $m\n",
-						"Perhaps you misspelled your password. I will remove $c again\n";
-					for(my $i = 0 ; ; $i++) {
-						if(myexec($cryptsetup, $remove, $c)) {
-							last
-						}
-						if($i < 5) {
-							print STDERR "$script: remove $c failed. Retrying in a second\n";
-							sleep 1
-						} else {
-							print STDERR "$script: error could not remove $c\n"
-						}
+		my $stat;
+		if(&check_luks($d)) {
+			$stat = &myexec($cryptsetup, @passopt, 'luksOpen', $d, $c)
+		} else {
+			$stat = &myexec($cryptsetup, @passopt, 'create', $c, $d)
+		}
+		if(!$stat) {
+			&error("could not create $c")
+		} else {
+			unless(&myexec('mount', $m)) {
+				&error("could not mount $m",
+					'perhaps the password was misspelled;',
+					"removing $c again");
+				for(my $i = 0 ; ; ++$i) {
+					last if(&myexec($cryptsetup, $remove, $c));
+					if($i < 5) {
+						&warning("removing $c failed",
+							'retrying in a second');
+						sleep(1)
+					} else {
+						&error("could not remove $c");
+						last
 					}
 				}
 			}
-		} else {
-			print STDERR "$script: warning: $m already exists\n"
 		}
 	}
 }
-exit($exitstate)
+exit($exitstate);
