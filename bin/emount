@@ -1,6 +1,6 @@
 #!/usr/bin/env perl
 require 5.012;
-package Emount v2.8.1;
+package Emount v2.8.2;
 
 use strict;
 use integer;
@@ -175,7 +175,7 @@ sub pod2usage {
 
 # Parse options:
 
-Getopt::Long::Configure(qw(bundling gnu_compat permute));
+Getopt::Long::Configure(qw(gnu_getopt));
 Getopt::Long::GetOptions(
 	'help|h', sub { &pod2usage(0) },
 	'man|?', sub { &pod2usage(-verbose => 2, -exit => 0) },
