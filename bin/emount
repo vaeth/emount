@@ -35,7 +35,7 @@ or to pipe a password.
 
 #!/bin/sh
 gpg --quiet --decrypt FILE.gpg E<verbar> \
-   cryptsetup -h sha512 -c twofish-cbc-essiv:sha256 -s 256 "${@}"
+   cryptsetup -h sha512 -c twofish-cbc-essiv:sha256 -s 256 "$@"
 
 =item For each encrypted device the file F</etc/fstab> should
 contain a line like
