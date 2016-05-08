@@ -1,6 +1,6 @@
 #!/usr/bin/env perl
 require 5.012;
-package Emount v2.9.0;
+package Emount v2.10.0;
 
 use strict;
 use integer;
@@ -139,20 +139,19 @@ sub check_luks {
 }
 
 # Print and execute command.
-# As a side effect, set $exitstate if execution was not successful.
 
 sub myexec {
 	my @cmd = &shdash(@_);
 	&shprintraw(@cmd);
 	return 1 if(system(@cmd) == 0);
-	$exitstate = $s;
 	''
 }
 
 sub error {
 	my $add = ': error: ';
 	print(STDERR $name, $add,
-		join("\n" . (' ' x (length($name) + length($add))), @_), "\n")
+		join("\n" . (' ' x (length($name) + length($add))), @_), "\n");
+	$exitstate = 2
 }
 
 sub warning {
@@ -259,7 +258,6 @@ for my $nameref (@ARGV) {
 	my $a = Cwd::abs_path($nameref);
 	unless(exists($dev{$a})) {
 		&error("no entry in /etc/fstab for $a");
-		$exitstate = 2;
 		next
 	}
 	my $d = $dev{$a};
@@ -291,32 +289,34 @@ for my $nameref (@ARGV) {
 		} else {
 			&warning("$m does not exist")
 		}
-	} elsif(-e $m) {
-		&warning("$m already exists")
 	} else {
-		my $stat;
-		if(&check_luks($d)) {
-			$stat = &myexec([$cryptsetup, @passopt], 'luksOpen', $d, $c)
+		if(-e $m) {
+			&warning("$m already exists")
 		} else {
-			$stat = &myexec([$cryptsetup, @passopt], 'create', $c, $d)
+			my $stat;
+			if(&check_luks($d)) {
+				$stat = &myexec([$cryptsetup, @passopt], 'luksOpen', $d, $c)
+			} else {
+				$stat = &myexec([$cryptsetup, @passopt], 'create', $c, $d)
+			}
+			unless($stat) {
+				&error("could not create $c");
+				next
+			}
 		}
-		if(!$stat) {
-			&error("could not create $c")
-		} else {
-			unless(&myexec('mount', $m)) {
-				&error("could not mount $m",
-					'perhaps the password was misspelled;',
-					"removing $c again");
-				for(my $i = 0 ; ; ++$i) {
-					last if(&myexec([$cryptsetup, $remove], $c));
-					if($i < 5) {
-						&warning("removing $c failed",
-							'retrying in a second');
-						sleep(1)
-					} else {
-						&error("could not remove $c");
-						last
-					}
+		unless(&myexec('mount', $m)) {
+			&error("could not mount $m",
+				'perhaps the password was misspelled;',
+				"removing $c again");
+			for(my $i = 0 ; ; ++$i) {
+				last if(&myexec([$cryptsetup, $remove], $c));
+				if($i < 5) {
+					&warning("removing $c failed",
+						'retrying in a second');
+					sleep(1)
+				} else {
+					&error("could not remove $c");
+					last
 				}
 			}
 		}
