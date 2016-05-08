@@ -1,13 +1,14 @@
 #!/usr/bin/env perl
 require 5.012;
-package Emount v2.8.4;
+package Emount v2.9.0;
 
 use strict;
 use integer;
 use Getopt::Long 2.24 ();
 use Cwd ();
 use File::Spec ();
-# use Pod::Usage ();
+#use Pod::Usage ();  # needed for --man, --help, some errors
+#use String::ShellQuote ();  # not mandatory but recommended: poor fallback
 
 =head1 NAME
 
@@ -141,26 +142,23 @@ sub check_luks {
 # As a side effect, set $exitstate if execution was not successful.
 
 sub myexec {
-	print(join(' ', @_), "\n");
-	my $s = system(@_);
-	if(($s < 0) && ($s & 127)) {
-		$s = 127
-	} else {
-		$s >>= 8
-	}
-	return 1 unless($s);
-	$exitstate = $s if($exitstate < $s);
+	my @cmd = &shdash(@_);
+	&shprintraw(@cmd);
+	return 1 if(system(@cmd) == 0);
+	$exitstate = $s;
 	''
 }
 
-sub error() {
-	print(STDERR "$name: error: ",
-		join("\n" . (' ' x (length($name) + 9)), @_), "\n")
+sub error {
+	my $add = ': error: ';
+	print(STDERR $name, $add,
+		join("\n" . (' ' x (length($name) + length($add))), @_), "\n")
 }
 
-sub warning() {
-	print(STDERR "$name: warning: ",
-		join("\n" . (' ' x (length($name) + 11)), @_), "\n")
+sub warning {
+	my $add = ': warning: ';
+	print(STDERR $name, $add,
+		join("\n" . (' ' x (length($name) + length($add))), @_), "\n")
 }
 
 sub version {
@@ -169,8 +167,54 @@ sub version {
 }
 
 sub pod2usage {
-	require Pod::Usage;;
+	require Pod::Usage;
 	&Pod::Usage::pod2usage
+}
+
+sub shdash {
+	my $c = shift();
+	$c = [$c] unless(ref($c) eq 'ARRAY');
+	for my $i (@_) {
+		if($i =~ m{^[-+]}o) {
+			push(@$c, '--');
+			last
+		}
+	}
+	(@$c, @_)
+}
+
+# use String::ShellQuote () and return whether successful
+
+{ my $shellquote = undef;  # A closure static variable
+sub use_shellquote {
+	return $shellquote if(defined($shellquote));
+	eval {
+		require String::ShellQuote
+	};
+	$shellquote = !$@
+}}
+
+# like join(' ', @_), but shell-quote arguments
+
+sub join_quoted {
+	my @r;
+	for my $i (@_) {
+		my $a = $i;
+		$a =~ s{\'}{\'\\\'\'}g;
+		$a = "'$a'";
+		$a =~ s{(\A|[^\\])\'([\w\-\,\.\:\/]*)\'}{$1$2}gm;
+		push(@r, ($a ne '') ? $a : "''")
+	}
+	join(' ', @r)
+}
+
+sub shell_quote_best_effort {
+	(&use_shellquote() ?
+		&String::ShellQuote::shell_quote_best_effort : &join_quoted)
+}
+
+sub shprintraw {
+	print(&shell_quote_best_effort, "\n")
 }
 
 # Parse options:
@@ -228,7 +272,7 @@ for my $nameref (@ARGV) {
 			if(&myexec('umount', $m)) {
 				&check_luks($d);
 				&error("could not remove $c")
-					unless(&myexec($cryptsetup, @passopt, $remove, $c));
+					unless(&myexec([$cryptsetup, @passopt], $remove, $c));
 				# Close repeatedly if necessary to deal with slave mounts;
 				while() {
 					sleep(1);
@@ -252,9 +296,9 @@ for my $nameref (@ARGV) {
 	} else {
 		my $stat;
 		if(&check_luks($d)) {
-			$stat = &myexec($cryptsetup, @passopt, 'luksOpen', $d, $c)
+			$stat = &myexec([$cryptsetup, @passopt], 'luksOpen', $d, $c)
 		} else {
-			$stat = &myexec($cryptsetup, @passopt, 'create', $c, $d)
+			$stat = &myexec([$cryptsetup, @passopt], 'create', $c, $d)
 		}
 		if(!$stat) {
 			&error("could not create $c")
@@ -264,7 +308,7 @@ for my $nameref (@ARGV) {
 					'perhaps the password was misspelled;',
 					"removing $c again");
 				for(my $i = 0 ; ; ++$i) {
-					last if(&myexec($cryptsetup, $remove, $c));
+					last if(&myexec([$cryptsetup, $remove], $c));
 					if($i < 5) {
 						&warning("removing $c failed",
 							'retrying in a second');
