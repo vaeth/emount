@@ -19,7 +19,7 @@ case $state in
 	if $m
 	then	[[ -z ${opt_args[-u]++} && -z ${opt_args[--umount]++} && -z ${opt_args[--unmount]++} ]] || \
 			m=false
-	else	[[ -z ${opt_args[-e]++} && -z ${opt_args[--mount]++} ]] || \
+	else	[[ -z ${opt_args[-m]++} && -z ${opt_args[--mount]++} ]] || \
 			m=:
 	fi
 	# Find mounted devices

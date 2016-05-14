@@ -1,6 +1,6 @@
 #!/usr/bin/env perl
 require 5.012;
-package Emount v2.10.0;
+package Emount v3.0.0;
 
 use strict;
 use integer;
@@ -116,8 +116,6 @@ my $devnull = File::Spec->devnull();
 
 my %dev = ();
 my $exitstate = 0;
-my $luks = '';
-my $remove = 'remove';
 
 # Default options:
 
@@ -127,24 +125,29 @@ my @passopt = ();
 # Functions:
 
 sub addtodev {
-	my ($a, $b) = @_;
-	$dev{$a} = $b unless(exists $dev{$a})
+	my $a = shift();
+	$dev{$a} = $_[0] unless(exists($dev{$a}))
 }
 
+{
+	my %luks = undef;  # A static cache closure
 sub check_luks {
-	my ($d) = @_;
-	return '' unless(&myexec($cryptsetup, 'isLuks', $d));
-	$remove = 'luksClose';
-	$luks = 1
+	my ($a) = @_;
+	my $cached = $luks{$a};
+	return $cached if(defined($cached));
+	$luks{$a} = &myexec($cryptsetup, 'isLuks', $a)
+}}
+
+sub calc_close {
+	(&check_luks ? 'luksClose' : 'remove')
 }
 
 # Print and execute command.
 
 sub myexec {
-	my @cmd = &shdash(@_);
+	my @cmd = &shdash;
 	&shprintraw(@cmd);
-	return 1 if(system(@cmd) == 0);
-	''
+	(system(@cmd) == 0)
 }
 
 sub error {
@@ -234,7 +237,7 @@ Getopt::Long::GetOptions(
 # Parse /etc/fstab
 
 {
-	local @ARGV = ('/etc/fstab'); # Fake next while:
+	local @ARGV = ('/etc/fstab');  # Fake next while:
 	while(<>) {
 		if(m{^\s*/dev/mapper/e\-([^\s]+)\s+([^\s]+)}) {
 			my $dev = $1;
@@ -268,9 +271,8 @@ for my $nameref (@ARGV) {
 	if($umountmode) {
 		if(-e $m) {
 			if(&myexec('umount', $m)) {
-				&check_luks($d);
 				&error("could not remove $c")
-					unless(&myexec([$cryptsetup, @passopt], $remove, $c));
+					unless(&myexec([$cryptsetup, @passopt], &calc_remove($d), $c));
 				# Close repeatedly if necessary to deal with slave mounts;
 				while() {
 					sleep(1);
@@ -290,8 +292,10 @@ for my $nameref (@ARGV) {
 			&warning("$m does not exist")
 		}
 	} else {
+		my $umount_on_error = 1;
 		if(-e $m) {
-			&warning("$m already exists")
+			&warning("$m already exists");
+			$umount_on_error = ''
 		} else {
 			my $stat;
 			if(&check_luks($d)) {
@@ -305,10 +309,15 @@ for my $nameref (@ARGV) {
 			}
 		}
 		unless(&myexec('mount', $m)) {
+			unless($umount_on_error) {
+				&error("could not mount $m");
+				next
+			}
 			&error("could not mount $m",
 				'perhaps the password was misspelled;',
 				"removing $c again");
-			for(my $i = 0 ; ; ++$i) {
+			my $remove = &calc_remove($d);
+			for(my $i = 0; ; ++$i) {
 				last if(&myexec([$cryptsetup, $remove], $c));
 				if($i < 5) {
 					&warning("removing $c failed",
