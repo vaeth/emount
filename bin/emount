@@ -1,6 +1,7 @@
 #!/usr/bin/env perl
-require 5.012;
-package Emount v3.0.1;
+BEGIN { require 5.006_001 }
+our $VERSION = 'v3.0.2';
+eval "package Emount $VERSION" if($] ge '5.012');
 
 use strict;
 use integer;
@@ -9,6 +10,8 @@ use Cwd ();
 use File::Spec ();
 #use Pod::Usage ();  # needed for --man, --help, some errors
 #use String::ShellQuote ();  # not mandatory but recommended: poor fallback
+
+=encoding UTF-8
 
 =head1 NAME
 
@@ -107,7 +110,6 @@ Martin VE<auml>th E<lt>martin@mvath.deE<gt>
 
 # Static variables:
 
-our $VERSION;
 my $umountmode = ($0 =~ m{un?mount[\w\.\,]*$}i);
 my $name = ($umountmode ? 'eumount' : 'emount');
 my $devnull = File::Spec->devnull();
