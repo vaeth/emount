@@ -1,7 +1,8 @@
 #!/usr/bin/env perl
+# SPDX-License-Identifier: BSD-3-Clause
 BEGIN { require 5.006_001 }
 package Emount;
-our $VERSION = 'v3.0.4';
+our $VERSION = 'v3.0.5';
 eval { $VERSION = version->declare($VERSION) };
 eval 'use version 0.77; $VERSION = version->declare($VERSION)' if($@);
 
